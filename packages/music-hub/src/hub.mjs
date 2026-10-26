@@ -26,6 +26,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadConfig, pick, pickNumber, describeConfig } from '../../shared/config.mjs';
+import { createNotifier } from './notify.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CFG = loadConfig();
@@ -144,6 +145,9 @@ const authorized = (req, url) => {
 /* 业务                                                                */
 /* ------------------------------------------------------------------ */
 
+/** 主动发言策略：只在"换歌 + 在播放 + 不吵人"时叫醒她；叫不醒也不影响记录 */
+const notifier = createNotifier(CFG.behavior, log);
+
 /** 上一首歌，用来判断是不是真的换歌了 */
 let lastKey = (() => {
   const prev = readJson(FILES.now, null);
@@ -208,6 +212,8 @@ function handleNowPlaying(body) {
       listenedSeconds,
     });
     lastKey = key;
+    // 叫她，但不告诉她该说什么 —— 说不说、说什么由她自己决定
+    notifier.maybeNotify(state, true);
     log(
       `history += ${track.title} — ${track.artists.join('/') || '未知歌手'}` +
         (listenedSeconds != null ? `（上一首听了 ${listenedSeconds}s）` : ''),
@@ -304,6 +310,7 @@ server.listen(PORT, HOST, () => {
   log(`music-hub listening on http://${HOST}:${PORT}`);
   log(describeConfig());
   log(`data dir: ${DATA_DIR}`);
+  log(notifier.describe());
   log(`stale after: ${Math.round(STALE_MS / 1000)}s`);
   log(TOKEN ? 'write endpoints: enabled' : 'WARNING: MUSIC_HUB_TOKEN empty — write endpoints disabled');
 });

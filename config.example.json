@@ -13,10 +13,18 @@
     "ignoreSources": []
   },
   "behavior": {
-    "_comment": "下面是 v0.2 的发言策略，现在写进去不会生效，先把位置留好",
+    "_comment": "换歌时要不要叫她。onSongChange=ask 表示叫醒她自己决定说不说；silent 表示从不主动。",
     "onSongChange": "ask",
     "minGapSeconds": 180,
     "quietHours": ["23:30", "07:00"],
-    "ignoreSource": ["bilibili"]
+    "ignoreSource": ["bilibili"],
+    "notify": {
+      "_comment": "不想要主动发言就整个删掉，或把 kind 改成 none。接 qq-bridge 时三个字段都要填：url 是控制台地址，consoleToken 在 ~/qq-bridge-tmp/state/console-token，key 是 private:你的QQ 或 group:群号。",
+      "kind": "none",
+      "url": "http://127.0.0.1:3100",
+      "consoleToken": "",
+      "key": "private:1000000",
+      "message": "【音乐】主人刚换成了《{title}》— {artists}。想聊就说两句，不想说就安静待着。"
+    }
   }
 }
