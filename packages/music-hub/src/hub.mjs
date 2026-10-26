@@ -42,6 +42,7 @@ const FILES = {
   now: path.join(DATA_DIR, 'now-playing.json'),
   history: path.join(DATA_DIR, 'history.jsonl'),
   recs: path.join(DATA_DIR, 'recommendations.json'),
+  taste: path.join(DATA_DIR, 'taste.json'),
 };
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -212,6 +213,8 @@ function handleNowPlaying(body) {
       listenedSeconds,
     });
     lastKey = key;
+    // 你听到的正好是她推荐过的，就把这条推荐标成「听了」——推荐才有闭环
+    markRecommendations(track);
     // 叫她，但不告诉她该说什么 —— 说不说、说什么由她自己决定
     notifier.maybeNotify(state, true);
     log(
@@ -245,6 +248,7 @@ function handleRecommend(body) {
     title: String(body.title).slice(0, 200),
     artist: body.artist ? String(body.artist).slice(0, 100) : '',
     reason: body.reason ? String(body.reason).slice(0, 500) : '',
+    status: 'pending', // pending / listened / skipped
     at: new Date().toISOString(),
   };
   list.push(item);
@@ -252,6 +256,68 @@ function handleRecommend(body) {
   writeJson(FILES.recs, list.slice(-200));
   log(`recommend += ${item.title}${item.artist ? ` — ${item.artist}` : ''}`);
   return { status: 200, payload: { ok: true, item } };
+}
+
+/** 把「用户真的听了」这件事标到推荐记录上 —— 推荐才有闭环 */
+const normText = (s) => String(s || '').toLowerCase().replace(/\s+/g, '');
+
+function markRecommendations(track) {
+  const list = readJson(FILES.recs, []);
+  if (!list.length) return;
+  const t = normText(track.title);
+  if (!t) return;
+  const a = normText((track.artists || []).join('/'));
+  let updated = false;
+  for (const rec of list) {
+    if (rec.status && rec.status !== 'pending') continue;
+    const rt = normText(rec.title);
+    const ra = normText(rec.artist);
+    if (!rt) continue;
+    const titleHit = t === rt || t.includes(rt) || rt.includes(t);
+    const artistHit = !ra || !a || a.includes(ra) || ra.includes(a);
+    if (titleHit && artistHit) {
+      rec.status = 'listened';
+      rec.listenedAt = new Date().toISOString();
+      rec.listenedTrack = { title: track.title, artists: track.artists };
+      updated = true;
+      log(`recommend hit: 《${rec.title}》 被听到了`);
+    }
+  }
+  if (updated) writeJson(FILES.recs, list);
+}
+
+function handleGetTaste() {
+  return { status: 200, payload: { ok: true, taste: readJson(FILES.taste, null) } };
+}
+
+function handlePutTaste(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { status: 400, payload: { ok: false, error: 'body must be a JSON object' } };
+  }
+  const artists = Array.isArray(body.artists)
+    ? body.artists
+        .filter((x) => x && typeof x === 'object' && x.name)
+        .slice(0, 100)
+        .map((x) => {
+          const n = Number(x.affinity);
+          return {
+            name: String(x.name).slice(0, 100),
+            affinity: Number.isFinite(n) ? Math.max(-5, Math.min(5, n)) : 0,
+            note: x.note ? String(x.note).slice(0, 300) : '',
+          };
+        })
+    : [];
+  const taste = {
+    artists,
+    tags: Array.isArray(body.tags)
+      ? body.tags.slice(0, 50).map((x) => String(x).slice(0, 60))
+      : [],
+    notes: body.notes ? String(body.notes).slice(0, 4000) : '',
+    updatedAt: new Date().toISOString(),
+  };
+  writeJson(FILES.taste, taste);
+  log(`taste updated: ${taste.artists.length} artists / ${taste.tags.length} tags`);
+  return { status: 200, payload: { ok: true, taste } };
 }
 
 /* ------------------------------------------------------------------ */
@@ -285,6 +351,9 @@ const server = http.createServer(async (req, res) => {
       case 'GET /v1/recommendations':
         return send(res, 200, { ok: true, items: readJson(FILES.recs, []) });
 
+      case 'GET /v1/taste':
+        return send(res, ...Object.values(handleGetTaste()));
+
       case 'POST /v1/now-playing': {
         const body = await readBody(req);
         const { status, payload } = handleNowPlaying(body);
@@ -294,6 +363,12 @@ const server = http.createServer(async (req, res) => {
       case 'POST /v1/recommend': {
         const body = await readBody(req);
         const { status, payload } = handleRecommend(body);
+        return send(res, status, payload);
+      }
+
+      case 'POST /v1/taste': {
+        const body = await readBody(req);
+        const { status, payload } = handlePutTaste(body);
         return send(res, status, payload);
       }
 

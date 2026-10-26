@@ -116,6 +116,25 @@ function describeHistory(items) {
     .join('\n');
 }
 
+function describeTaste(taste) {
+  if (!taste) return '还没有记录口味。可以先看一阵子 music_history，再写进来。';
+  const lines = [];
+  if (taste.artists?.length) {
+    lines.push(
+      '歌手：' +
+        taste.artists
+          .map((a) => `${a.name}(${a.affinity > 0 ? '+' : ''}${a.affinity})`)
+          .join('、'),
+    );
+  }
+  if (taste.tags?.length) lines.push('风格：' + taste.tags.join('、'));
+  if (taste.notes) lines.push('笔记：' + taste.notes);
+  if (taste.updatedAt) {
+    lines.push('更新于 ' + new Date(taste.updatedAt).toLocaleString('zh-CN', { hour12: false }));
+  }
+  return lines.join('\n') || '口味记录是空的。';
+}
+
 /* ------------------------------------------------------------------ */
 /* MCP server                                                          */
 /* ------------------------------------------------------------------ */
@@ -166,6 +185,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['title', 'artist', 'reason'],
       },
     },
+    {
+      name: 'music_taste',
+      description:
+        '查看或更新你对主人口味的了解（歌手亲密度、风格标签、随手笔记）。' +
+        '不带参数 = 读；带参数 = 整体覆盖写。写之前先读一次，在原有基础上补充，别把之前记的丢掉。' +
+        'affinity 是 -5..5 的整数，正数表示喜欢，note 写一句印象。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          artists: {
+            type: 'array',
+            description: '歌手列表，整体覆盖写',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: '歌手名' },
+                affinity: { type: 'integer', description: '-5..5，正数表示喜欢' },
+                note: { type: 'string', description: '一句话印象' },
+              },
+              required: ['name'],
+            },
+          },
+          tags: {
+            type: 'array',
+            description: '风格/语言标签，如「独立摇滚」「粤语」',
+            items: { type: 'string' },
+          },
+          notes: { type: 'string', description: '自由笔记，4000 字以内' },
+        },
+      },
+    },
   ],
 }));
 
@@ -202,9 +252,23 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       );
     }
 
+    if (name === 'music_taste') {
+      const hasWrite =
+        args.artists !== undefined || args.tags !== undefined || args.notes !== undefined;
+      if (!hasWrite) {
+        const { taste } = await hubGet('/v1/taste');
+        return text(describeTaste(taste));
+      }
+      const res = await hubPost('/v1/taste', {
+        artists: Array.isArray(args.artists) ? args.artists : [],
+        tags: Array.isArray(args.tags) ? args.tags : [],
+        notes: String(args.notes || ''),
+      });
+      return text('口味已更新：\n' + describeTaste(res?.taste));
+    }
+
     return { ...text(`未知工具：${name}`), isError: true };
-  } catch (err) {
-    // 工具失败要返回 isError，让 agent 知道"读不到"，而不是编一个答案
+  } catch (err) {    // 工具失败要返回 isError，让 agent 知道"读不到"，而不是编一个答案
     return {
       content: [{ type: 'text', text: `读不到音乐数据：${err.message}` }],
       isError: true,

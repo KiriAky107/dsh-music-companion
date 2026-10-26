@@ -41,7 +41,14 @@ async function waitFor(url, timeoutMs = 8000) {
 fs.rmSync(DATA_DIR, { recursive: true, force: true });
 
 const hub = spawn(process.execPath, [path.join(ROOT, 'packages/music-hub/src/hub.mjs')], {
-  env: { ...process.env, MUSIC_HUB_PORT: String(PORT), MUSIC_HUB_TOKEN: TOKEN, MUSIC_HUB_DATA: DATA_DIR },
+  env: {
+    ...process.env,
+    MUSIC_HUB_PORT: String(PORT),
+    MUSIC_HUB_TOKEN: TOKEN,
+    MUSIC_HUB_DATA: DATA_DIR,
+    // 别读到开发机上的真实 config.json（可能连着公网 hub）
+    MUSIC_CONFIG: path.join(DATA_DIR, 'no-config.json'),
+  },
   stdio: 'ignore',
 });
 
@@ -73,7 +80,7 @@ try {
 
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['music_history', 'music_now_playing', 'music_recommend']);
+  assert.deepEqual(names, ['music_history', 'music_now_playing', 'music_recommend', 'music_taste']);
   console.log(`✓ 工具列表正确：${names.join(', ')}`);
 
   const now = await client.callTool({ name: 'music_now_playing', arguments: {} });
@@ -105,6 +112,51 @@ try {
   assert.equal(recs.items.length, 1, 'hub 上应有一条推荐');
   assert.equal(recs.items[0].reason, '跟你刚听的是同一支乐队');
   console.log(`✓ music_recommend → ${recText}`);
+
+  // taste：先读（空），再写，再读回
+  const tasteEmpty = await client.callTool({ name: 'music_taste', arguments: {} });
+  assert.ok(
+    (tasteEmpty.content?.[0]?.text ?? '').includes('还没有'),
+    '空口味应提示还没记录',
+  );
+
+  const tasteWrite = await client.callTool({
+    name: 'music_taste',
+    arguments: {
+      artists: [{ name: '回春丹', affinity: 4, note: '现场比录音室好听' }],
+      tags: ['独立摇滚'],
+      notes: '深夜听抒情',
+    },
+  });
+  assert.equal(tasteWrite.isError, undefined, 'taste 写不应报错');
+  assert.ok((tasteWrite.content?.[0]?.text ?? '').includes('回春丹'), '写回显应含歌手');
+
+  const tasteRead = await client.callTool({ name: 'music_taste', arguments: {} });
+  const tasteText = tasteRead.content?.[0]?.text ?? '';
+  assert.ok(tasteText.includes('回春丹'), '读回应含歌手');
+  assert.ok(tasteText.includes('独立摇滚'), '读回应含标签');
+  console.log(`✓ music_taste → ${tasteText.split('\n')[0]}`);
+
+  // 推荐闭环：推一首，再上报"正在听"，应被标成 listened
+  await client.callTool({
+    name: 'music_recommend',
+    arguments: { title: '晴天', artist: '周杰伦', reason: '试试' },
+  });
+  await fetch(`${BASE}/v1/now-playing`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify({
+      track: { title: '晴天', artists: ['周杰伦'] },
+      playing: true,
+      device: 'smoke',
+    }),
+  });
+  const recsAfter = await fetch(`${BASE}/v1/recommendations`, {
+    headers: { authorization: `Bearer ${TOKEN}` },
+  }).then((r) => r.json());
+  const sunny = recsAfter.items.find((x) => x.title === '晴天');
+  assert.equal(sunny?.status, 'listened', '听到推荐应标成 listened');
+  console.log('✓ 推荐闭环：听到后被标成 listened');
 
   await client.close();
   console.log('\n全部通过');
