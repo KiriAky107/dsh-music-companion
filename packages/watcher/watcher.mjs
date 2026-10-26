@@ -21,16 +21,26 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { lookupNetease, neteaseStatus } from './netease.mjs';
+import { loadConfig, pick, pickNumber, describeConfig } from '../shared/config.mjs';
 
 const execFileAsync = promisify(execFile);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PS1 = path.join(HERE, 'smtc.ps1');
 
-const HUB_URL = (process.env.MUSIC_HUB_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
-const TOKEN = (process.env.MUSIC_HUB_TOKEN || '').trim();
-const POLL_SECONDS = Math.max(5, Number(process.env.MUSIC_POLL_SECONDS || 20));
-const DEVICE = process.env.MUSIC_DEVICE || 'desktop-windows';
+const CFG = loadConfig();
+
+const HUB_URL = String(pick('MUSIC_HUB_URL', CFG.hub?.url, 'http://127.0.0.1:8787')).replace(/\/+$/, '');
+const TOKEN = String(pick('MUSIC_HUB_TOKEN', CFG.hub?.token, '')).trim();
+const POLL_SECONDS = pickNumber('MUSIC_POLL_SECONDS', CFG.watcher?.pollSeconds, 20, { min: 5 });
+const DEVICE = String(pick('MUSIC_DEVICE', CFG.watcher?.device, 'desktop-windows'));
+
+// 不想被当成"在听歌"的来源（比如 B 站的长视频）。默认不过滤。
+const IGNORE_SOURCES = new Set(
+  (Array.isArray(CFG.watcher?.ignoreSources) ? CFG.watcher.ignoreSources : []).map((s) =>
+    String(s).toLowerCase(),
+  ),
+);
 
 const log = (...args) => {
   const ts = new Date().toTimeString().slice(0, 8);
@@ -131,6 +141,14 @@ async function tick() {
     ? String(info.artist).split('/').map((s) => s.trim()).filter(Boolean)
     : [];
 
+  // 配置里点名不要的来源（比如 bilibili），直接不上报 ——
+  // 看网课不该被算成"在听歌"，也不该进她的听歌记录。
+  const source = classifySource(info.app);
+  const appId = String(info.app || '').toLowerCase();
+  if (IGNORE_SOURCES.has(source) || IGNORE_SOURCES.has(appId)) {
+    return;
+  }
+
   // SMTC 只有歌名和歌手；真正的数字 id 在网易云客户端自己的播放队列里。
   // 匹配不上（比如用 B 站听）就留空，hub 那边只是少一个字段，不影响记录。
   const local = lookupNetease(info.title, artists);
@@ -166,7 +184,7 @@ async function tick() {
         : Math.round(elapsedSeconds),
     playing,
     device: DEVICE,
-    source: classifySource(info.app),
+    source,
     sourceApp: info.app || '',
   };
 
@@ -190,6 +208,10 @@ async function tick() {
 }
 
 log(`watcher 启动：每 ${POLL_SECONDS}s 读一次 SMTC → ${HUB_URL}`);
+log(describeConfig());
+if (IGNORE_SOURCES.size) log(`忽略来源：${[...IGNORE_SOURCES].join(', ')}`);
+const nst = neteaseStatus();
+log(`本地队列：${nst.enabled ? `${nst.tracks} 首可查 id` : '没读到，song id 会是 null'}`);
 
 if (process.argv.includes('--once')) {
   // 单次模式：跑一轮就退出，用来验证链路是否通

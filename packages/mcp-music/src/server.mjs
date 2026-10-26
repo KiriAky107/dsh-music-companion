@@ -14,8 +14,12 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
-const HUB = (process.env.MUSIC_HUB_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
-const TOKEN = (process.env.MUSIC_HUB_TOKEN || '').trim();
+import { loadConfig, pick } from '../../shared/config.mjs';
+
+const CFG = loadConfig();
+
+const HUB = String(pick('MUSIC_HUB_URL', CFG.hub?.url, 'http://127.0.0.1:8787')).replace(/\/+$/, '');
+const TOKEN = String(pick('MUSIC_HUB_TOKEN', CFG.hub?.token, '')).trim();
 
 /* ------------------------------------------------------------------ */
 /* hub 客户端                                                          */

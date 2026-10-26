@@ -1,0 +1,22 @@
+{
+  "_readme": "复制成 config.json 再改。真实 config.json 已被 .gitignore 忽略，不会进仓库。三个组件共用这一份，优先级：环境变量 > config.json > 内置默认值。",
+  "hub": {
+    "url": "http://127.0.0.1:8787",
+    "token": "换成你自己的长随机串，比如 openssl rand -hex 24",
+    "host": "127.0.0.1",
+    "port": 8787,
+    "staleSeconds": 600
+  },
+  "watcher": {
+    "pollSeconds": 20,
+    "device": "desktop-windows",
+    "ignoreSources": []
+  },
+  "behavior": {
+    "_comment": "下面是 v0.2 的发言策略，现在写进去不会生效，先把位置留好",
+    "onSongChange": "ask",
+    "minGapSeconds": 180,
+    "quietHours": ["23:30", "07:00"],
+    "ignoreSource": ["bilibili"]
+  }
+}

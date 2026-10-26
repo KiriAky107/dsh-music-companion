@@ -25,13 +25,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+import { loadConfig, pick, pickNumber, describeConfig } from '../../shared/config.mjs';
 
-const PORT = Number(process.env.MUSIC_HUB_PORT || 8787);
-const HOST = process.env.MUSIC_HUB_HOST || '127.0.0.1';
-const TOKEN = (process.env.MUSIC_HUB_TOKEN || '').trim();
-const DATA_DIR = process.env.MUSIC_HUB_DATA || path.join(HERE, '..', 'data');
-const STALE_MS = Number(process.env.MUSIC_HUB_STALE_SECONDS || 600) * 1000;
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const CFG = loadConfig();
+
+const PORT = pickNumber('MUSIC_HUB_PORT', CFG.hub?.port, 8787, { min: 1, max: 65535 });
+const HOST = pick('MUSIC_HUB_HOST', CFG.hub?.host, '127.0.0.1');
+const TOKEN = String(pick('MUSIC_HUB_TOKEN', CFG.hub?.token, '')).trim();
+const DATA_DIR = pick('MUSIC_HUB_DATA', CFG.hub?.dataDir, path.join(HERE, '..', 'data'));
+const STALE_MS =
+  pickNumber('MUSIC_HUB_STALE_SECONDS', CFG.hub?.staleSeconds, 600, { min: 5 }) * 1000;
 
 const FILES = {
   now: path.join(DATA_DIR, 'now-playing.json'),
@@ -298,7 +302,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   log(`music-hub listening on http://${HOST}:${PORT}`);
+  log(describeConfig());
   log(`data dir: ${DATA_DIR}`);
+  log(`stale after: ${Math.round(STALE_MS / 1000)}s`);
   log(TOKEN ? 'write endpoints: enabled' : 'WARNING: MUSIC_HUB_TOKEN empty — write endpoints disabled');
 });
 

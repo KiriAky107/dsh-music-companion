@@ -124,6 +124,91 @@ mcp-servers:
 
 ---
 
+## 配置与调参
+
+三个组件共用一份 `config.json`，改一个地方三个都读到。
+
+### 文件放哪
+
+按顺序找，取第一个存在的：
+
+1. `$MUSIC_CONFIG` 指定的路径（临时切换配置、调试用）
+2. `./config.json`（在仓库根目录跑时最方便）
+3. `$XDG_CONFIG_HOME/dsh-music-companion/config.json`
+4. `~/.config/dsh-music-companion/config.json`
+5. `%APPDATA%\dsh-music-companion\config.json`（Windows）
+
+仓库根目录的 `config.example.json` 复制成 `config.json` 就能用，后者已被 `.gitignore` 排除。
+
+**优先级：环境变量 > config.json > 内置默认值。** 环境变量永远能临时压过文件，试参数时不用改文件。
+
+### 完整参数
+
+| 键 | 环境变量 | 默认 | 说明 |
+|---|---|---|---|
+| `hub.url` | `MUSIC_HUB_URL` | `http://127.0.0.1:8787` | hub 地址，watcher 与 mcp 都读 |
+| `hub.token` | `MUSIC_HUB_TOKEN` | 空 | `/v1/*` 全接口的鉴权密钥 |
+| `hub.host` | `MUSIC_HUB_HOST` | `127.0.0.1` | hub 绑定地址，跨机要改成 `0.0.0.0` |
+| `hub.port` | `MUSIC_HUB_PORT` | `8787` | hub 端口 |
+| `hub.dataDir` | `MUSIC_HUB_DATA` | `packages/music-hub/data` | 数据落盘目录 |
+| `hub.staleSeconds` | `MUSIC_HUB_STALE_SECONDS` | `600` | 多久没更新就标 `stale: true` |
+| `watcher.pollSeconds` | `MUSIC_POLL_SECONDS` | `20` | 多久读一次系统媒体会话 |
+| `watcher.device` | `MUSIC_DEVICE` | `desktop-windows` | 设备标识，多机时区分 |
+| `watcher.ignoreSources` | — | `[]` | 不当作"在听歌"的来源 |
+
+### 过滤不想被记录的来源
+
+`watcher.ignoreSources` 收 `netease` / `bilibili` / `other` 三个值。被过滤的来源 watcher 根本不会上报，hub 和 agent 都看不到——看网课不该进听歌记录。
+
+```json
+"watcher": { "ignoreSources": ["bilibili"] }
+```
+
+### behavior 段是给 v0.2 的
+
+`config.example.json` 里有一段 `behavior`，写的是「她什么时候该主动开口」。**现在写进去不生效**，因为主动说话的逻辑还没写。提前放出来是想先把想法固定下来：
+
+| 键 | 打算怎么用 |
+|---|---|
+| `onSongChange` | `always` 每首都接话 / `ask` 拿不准就问 / `silent` 只在被问到时说 |
+| `minGapSeconds` | 两次主动开口之间的最小间隔，防刷屏 |
+| `quietHours` | 这段时间内绝不主动说话 |
+| `ignoreSource` | 这些来源的变化不触发发言 |
+
+### 调试
+
+**看 watcher 到底读到了什么**：
+
+```powershell
+node packages\watcher\watcher.mjs --once
+```
+
+启动时会打三行：配置来源、读到的本地队列条数、这一轮的歌。链路通不通一眼就看得出来。
+
+**确认 hub 收到没有**：
+
+```bash
+curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8787/v1/now-playing
+```
+
+**看 hub 日志**：
+
+```bash
+tail -f /var/log/music-hub.log
+```
+
+**塞一条假数据试场景**（注意 `track` 这一层不能省，直接发 `{"title":...}` 会返回 `track.title is required`）：
+
+```bash
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"track":{"title":"晴天","artists":["周杰伦"],"duration":269},"progress":30,"playing":true}' \
+  http://127.0.0.1:8787/v1/now-playing
+```
+
+Windows 上别在 PowerShell 里硬拼 JSON 引号，写成文件再 `--data-binary @payload.json` 省事得多。
+
+---
+
 ## 工具
 
 | 工具 | 说明 |
