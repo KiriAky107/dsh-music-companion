@@ -1,0 +1,17 @@
+{
+  "name": "dsh-music-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Let your DSH agent know what you're listening to — and eventually recommend music back.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "hub": "node packages/music-hub/src/hub.mjs",
+    "watcher": "node packages/watcher/watcher.mjs",
+    "mcp": "node packages/mcp-music/src/server.mjs",
+    "test:smoke": "node scripts/smoke.mjs"
+  }
+}

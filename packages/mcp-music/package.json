@@ -1,0 +1,25 @@
+{
+  "name": "@dsh-music/mcp-music",
+  "version": "0.1.0",
+  "description": "MCP tools that let a DSH agent see what you're listening to.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "mcp-music": "./src/server.mjs"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2"
+  },
+  "keywords": [
+    "dsh",
+    "mcp",
+    "music",
+    "now-playing"
+  ]
+}

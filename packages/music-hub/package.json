@@ -1,0 +1,21 @@
+{
+  "name": "@dsh-music/music-hub",
+  "version": "0.1.0",
+  "description": "Tiny state hub for dsh-music-companion. Zero dependencies.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "music-hub": "./src/hub.mjs"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "dsh",
+    "music",
+    "now-playing"
+  ]
+}

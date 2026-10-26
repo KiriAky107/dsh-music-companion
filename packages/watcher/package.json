@@ -1,0 +1,26 @@
+{
+  "name": "@dsh-music/watcher",
+  "version": "0.1.0",
+  "description": "Reads the Windows system media session (SMTC) and reports now-playing to music-hub.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "music-watcher": "./watcher.mjs"
+  },
+  "files": [
+    "watcher.mjs",
+    "smtc.ps1"
+  ],
+  "os": [
+    "win32"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "keywords": [
+    "dsh",
+    "music",
+    "smtc",
+    "now-playing"
+  ]
+}
