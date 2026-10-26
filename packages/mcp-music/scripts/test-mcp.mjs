@@ -73,7 +73,7 @@ try {
 
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ['music_history', 'music_now_playing']);
+  assert.deepEqual(names, ['music_history', 'music_now_playing', 'music_recommend']);
   console.log(`✓ 工具列表正确：${names.join(', ')}`);
 
   const now = await client.callTool({ name: 'music_now_playing', arguments: {} });
@@ -91,6 +91,20 @@ try {
   const bad = await client.callTool({ name: 'music_history', arguments: { limit: 999 } });
   assert.equal(bad.isError, undefined, 'limit 超范围应被夹紧而不是报错');
   console.log('✓ limit 被夹紧，没有炸');
+
+  const rec = await client.callTool({
+    name: 'music_recommend',
+    arguments: { title: '花海', artist: '回春丹', reason: '跟你刚听的是同一支乐队' },
+  });
+  const recText = rec.content?.[0]?.text ?? '';
+  assert.equal(rec.isError, undefined, 'recommend 不应报错');
+  assert.ok(recText.includes('花海'), 'recommend 应回显歌名');
+  const recs = await fetch(`${BASE}/v1/recommendations`, {
+    headers: { authorization: `Bearer ${TOKEN}` },
+  }).then((r) => r.json());
+  assert.equal(recs.items.length, 1, 'hub 上应有一条推荐');
+  assert.equal(recs.items[0].reason, '跟你刚听的是同一支乐队');
+  console.log(`✓ music_recommend → ${recText}`);
 
   await client.close();
   console.log('\n全部通过');

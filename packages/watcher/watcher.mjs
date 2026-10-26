@@ -20,6 +20,8 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { lookupNetease, neteaseStatus } from './netease.mjs';
+
 const execFileAsync = promisify(execFile);
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +60,20 @@ async function readSmtc() {
   return JSON.parse(line);
 }
 
+/**
+ * 把 SMTC 的 AppUserModelId 归成人能看懂的来源。
+ * agent 需要区分「在听歌」和「在看网课」——B 站也会往 SMTC 里塞视频标题。
+ */
+function classifySource(app) {
+  const a = String(app || '').toLowerCase();
+  if (a.includes('cloudmusic') || a.includes('netease')) return 'netease';
+  if (a.includes('bilibili')) return 'bilibili';
+  if (a.includes('qqmusic')) return 'qqmusic';
+  if (a.includes('spotify')) return 'spotify';
+  if (/(chrome|msedge|firefox|brave|opera|vivaldi)/.test(a)) return 'browser';
+  return 'other';
+}
+
 /* ------------------------------------------------------------------ */
 /* 推给 hub                                                            */
 /* ------------------------------------------------------------------ */
@@ -84,7 +100,10 @@ async function push(state) {
 /* 主循环                                                              */
 /* ------------------------------------------------------------------ */
 
-let lastKey = null; // 上一次上报的指纹，重复的不发
+let currentSong = null;      // 当前歌曲指纹（歌名|歌手），用来判断换歌
+let elapsedSeconds = 0;      // 这首歌已播放的秒数（暂停不累加，换歌清零）
+let lastTickAt = Date.now();
+let lastLoggedKey = null;    // 日志去重：只在上报内容真的变了时打一行
 let consecutiveErrors = 0;
 
 async function tick() {
@@ -98,41 +117,75 @@ async function tick() {
 
   // 没有播放器在跑：什么都不发，让 hub 自己按超时标 stale
   if (!info || !info.found || !info.title) {
-    if (lastKey !== null) {
+    if (currentSong !== null) {
       log('播放器已退出或无媒体');
-      lastKey = null;
+      currentSong = null;
+      elapsedSeconds = 0;
+      lastLoggedKey = null;
     }
     return;
   }
 
   const playing = String(info.status || '').toLowerCase() === 'playing';
-  const key = `${info.title}|${info.artist || ''}|${playing ? 'playing' : 'paused'}`;
-  if (key === lastKey) return;
+  const artists = info.artist
+    ? String(info.artist).split('/').map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  // SMTC 只有歌名和歌手；真正的数字 id 在网易云客户端自己的播放队列里。
+  // 匹配不上（比如用 B 站听）就留空，hub 那边只是少一个字段，不影响记录。
+  const local = lookupNetease(info.title, artists);
+  const duration =
+    local?.durationSeconds ??
+    (typeof info.duration === 'number' && info.duration > 0 ? info.duration : null);
+
+  // 进度：SMTC 对网易云不报 timeline，只能自己累加。
+  // 暂停期间不计时、换歌清零 —— 这就是"这首歌听了多久"。
+  const songKey = `${info.title}|${info.artist || ''}`;
+  const now = Date.now();
+  if (songKey !== currentSong) {
+    currentSong = songKey;
+    elapsedSeconds = 0;
+  }
+  if (playing) {
+    elapsedSeconds += Math.max(0, (now - lastTickAt) / 1000);
+  }
+  lastTickAt = now;
 
   const payload = {
     track: {
       title: info.title,
-      artists: info.artist ? String(info.artist).split('/').map((s) => s.trim()).filter(Boolean) : [],
-      album: info.album || '',
-      id: null,
-      duration: typeof info.duration === 'number' && info.duration > 0 ? info.duration : null,
+      artists,
+      album: local?.album || info.album || '',
+      id: local?.id || null,
+      duration,
     },
-    progress: typeof info.position === 'number' && info.position > 0 ? info.position : null,
+    // 优先用 SMTC 报的进度（有的播放器会报）；网易云不报，就用自己累加的
+    progress:
+      typeof info.position === 'number' && info.position > 0
+        ? info.position
+        : Math.round(elapsedSeconds),
     playing,
     device: DEVICE,
-    source: `smtc/${info.app || 'unknown'}`,
+    source: classifySource(info.app),
+    sourceApp: info.app || '',
   };
 
   try {
     const result = await push(payload);
-    lastKey = key;
     consecutiveErrors = 0;
-    log(`${playing ? '▶' : '❚❚'} ${payload.track.title} — ${payload.track.artists.join('/') || '未知歌手'}`,
-      result?.changed === false ? '(hub 认为没变)' : '');
+
+    // 每轮都发（进度要更新），但日志只在上报内容真的变了时打，免得刷屏
+    const logKey = `${songKey}|${playing ? 'playing' : 'paused'}`;
+    if (logKey !== lastLoggedKey) {
+      lastLoggedKey = logKey;
+      log(
+        `${playing ? '▶' : '❚❚'} ${payload.track.title} — ${payload.track.artists.join('/') || '未知歌手'}`,
+        result?.changed === false ? '(hub 认为没变)' : '',
+      );
+    }
   } catch (err) {
     consecutiveErrors += 1;
     log(`上报失败（第 ${consecutiveErrors} 次）：`, err.message);
-    // 失败时不更新 lastKey，下一轮重试同一首歌
   }
 }
 

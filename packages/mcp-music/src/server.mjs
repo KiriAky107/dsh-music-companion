@@ -32,12 +32,35 @@ async function hubGet(pathAndQuery) {
   return res.json();
 }
 
+async function hubPost(pathname, body) {
+  const res = await fetch(`${HUB}${pathname}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`music-hub returned ${res.status}: ${t.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
 /* ------------------------------------------------------------------ */
 /* 格式化                                                              */
 /* ------------------------------------------------------------------ */
 
 const artistsOf = (track) =>
   track?.artists?.length ? track.artists.join('/') : '未知歌手';
+
+const formatDuration = (sec) => {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
 
 function describeNow(now) {
   if (!now || !now.track) return '还没收到任何播放数据。可能是桌面端的 watcher 没在跑。';
@@ -50,6 +73,8 @@ function describeNow(now) {
 
   let line = bits.join(' — ');
 
+  if (now.track.duration) line += `，时长 ${formatDuration(now.track.duration)}`;
+
   if (now.stale) {
     line += `（已经 ${now.ageSeconds} 秒没更新了，可能关掉了播放器）`;
   } else if (now.track.duration && typeof now.progress === 'number') {
@@ -58,6 +83,9 @@ function describeNow(now) {
   }
 
   if (now.track.album) line += `，专辑《${now.track.album}》`;
+  // songId 是 agent 调歌词/评论接口的钥匙，拿到就告诉她
+  if (now.track.id) line += `，歌曲 ID ${now.track.id}`;
+  if (now.source && now.source !== 'other') line += `，来源 ${now.source}`;
   return line;
 }
 
@@ -73,7 +101,13 @@ function describeHistory(items) {
         hour: '2-digit',
         minute: '2-digit',
       });
-      return `${i + 1}. ${at} 《${t.title}》— ${artistsOf(t)}`;
+      // listenedSeconds 是"换到这首之前，上一首听了多久"，用来判断那是听完还是跳过
+      let tail = '';
+      if (typeof it.listenedSeconds === 'number') {
+        const sec = it.listenedSeconds;
+        tail = `（上一首听了 ${sec}s）`;
+      }
+      return `${i + 1}. ${at} 《${t.title}》— ${artistsOf(t)}${tail}`;
     })
     .join('\n');
 }
@@ -113,6 +147,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
       },
     },
+    {
+      name: 'music_recommend',
+      description:
+        '把一首歌推荐给主人。你了解了他的口味之后可以主动推，推完会出现在桌面端的待推队列里。reason 要写人话，会原样展示给他看。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: '歌名' },
+          artist: { type: 'string', description: '歌手' },
+          reason: { type: 'string', description: '为什么推这首，一句话，会展示给主人' },
+          id: { type: 'string', description: '可选，网易云歌曲 ID（有就带上，能精确匹配）' },
+        },
+        required: ['title', 'artist', 'reason'],
+      },
+    },
   ],
 }));
 
@@ -129,6 +178,24 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
       const { items } = await hubGet(`/v1/history?limit=${limit}`);
       return text(describeHistory(items));
+    }
+
+    if (name === 'music_recommend') {
+      const title = String(args.title || '').trim();
+      const artist = String(args.artist || '').trim();
+      if (!title) {
+        return { ...text('推荐失败：歌名不能为空'), isError: true };
+      }
+      const res = await hubPost('/v1/recommend', {
+        title,
+        artist,
+        reason: String(args.reason || '').trim(),
+        id: args.id ? String(args.id) : null,
+      });
+      return text(
+        `已经放进待推队列：《${title}》${artist ? ` — ${artist}` : ''}。` +
+          (res?.ok ? '桌面端下次拉取时会看到它。' : ''),
+      );
     }
 
     return { ...text(`未知工具：${name}`), isError: true };

@@ -30,6 +30,15 @@ try {
         $netTask.Result
     }
 
+    # Some Electron apps (bilibili) report the literal string "undefined" instead
+    # of an empty property. Normalise that, and real $null, to an empty string.
+    function TextOrEmpty($value) {
+        if ($null -eq $value) { return '' }
+        $s = [string]$value
+        if ($s -eq 'undefined' -or $s -eq 'null') { return '' }
+        return $s
+    }
+
     # Tell PowerShell this is a WinRT type. The type literal must stay on ONE
     # line; a line break splits it into two arguments and parsing fails.
     $null = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime]
@@ -54,9 +63,9 @@ try {
     $result = [ordered]@{
         found  = $true
         app    = $session.SourceAppUserModelId
-        title  = $props.Title
-        artist = $props.Artist
-        album  = $props.AlbumTitle
+        title  = (TextOrEmpty $props.Title)
+        artist = (TextOrEmpty $props.Artist)
+        album  = (TextOrEmpty $props.AlbumTitle)
         status = $playback.PlaybackStatus.ToString()
     }
 

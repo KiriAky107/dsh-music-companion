@@ -166,12 +166,29 @@ function handleNowPlaying(body) {
   const key = trackKey(track);
   const changed = key !== lastKey;
 
+  // 上一首听了多久：从它开始播到它最后一次被上报。
+  // watcher 每轮都会上报，所以 prev.updatedAt 就是上一首的"最后一刻"。
+  // 有了 duration 就能判断是听完还是跳过 —— 这才是真正的口味信号。
+  const prev = readJson(FILES.now, null);
+  let listenedSeconds = null;
+  if (changed && prev?.track && prev.startedAt) {
+    const startedMs = new Date(prev.startedAt).getTime();
+    const endMs = new Date(prev.updatedAt || now).getTime();
+    if (Number.isFinite(startedMs) && Number.isFinite(endMs)) {
+      listenedSeconds = Math.max(0, Math.round((endMs - startedMs) / 1000));
+    }
+  }
+
+  // startedAt 只在换歌时重置；暂停/继续不会改它，所以它是"这首歌的开播时刻"
+  const startedAt = changed || !prev?.startedAt ? now : prev.startedAt;
+
   const state = {
     track,
     progress: typeof body.progress === 'number' ? body.progress : null,
     playing,
     device: body.device ? String(body.device).slice(0, 64) : 'unknown',
     source: body.source ? String(body.source).slice(0, 64) : 'unknown',
+    startedAt,
     updatedAt: now,
     stale: false,
   };
@@ -179,9 +196,18 @@ function handleNowPlaying(body) {
 
   // 只有"换歌 + 在播放"才记历史，暂停/继续不记
   if (changed && playing) {
-    appendHistory({ at: now, track, device: state.device });
+    appendHistory({
+      at: now,
+      track,
+      device: state.device,
+      // 上一首听了多久（秒）。第一首没有上一首，就是 null
+      listenedSeconds,
+    });
     lastKey = key;
-    log(`history += ${track.title} — ${track.artists.join('/') || '未知歌手'}`);
+    log(
+      `history += ${track.title} — ${track.artists.join('/') || '未知歌手'}` +
+        (listenedSeconds != null ? `（上一首听了 ${listenedSeconds}s）` : ''),
+    );
   }
 
   return { status: 200, payload: { ok: true, changed } };
