@@ -24,9 +24,9 @@
 | 记住你最近听过哪些歌、每首听了多久 | v0.1 ✅ |
 | 拿到歌曲 ID、时长、来源（音乐 / B站视频 / 其他） | v0.1 ✅ |
 | agent 主动把歌推进你的推荐队列 | v0.1 ✅ |
-| 换歌时自己决定要不要搭话（而不是每首都播报） | v0.2 |
-| 攒够口味后主动推歌，并记住你听没听 | v0.2 |
-| 打包成 DSH 插件，上架插件市场 | v0.3 |
+| 换歌时自己决定要不要搭话（而不是每首都播报） | v0.2 ✅ |
+| 攒够口味后主动推歌，并记住你听没听 | v0.3 |
+| 打包成 DSH 插件，上架插件市场 | v0.4 |
 
 ---
 
@@ -164,16 +164,25 @@ mcp-servers:
 "watcher": { "ignoreSources": ["bilibili"] }
 ```
 
-### behavior 段是给 v0.2 的
+### 主动开口（v0.2）
 
-`config.example.json` 里有一段 `behavior`，写的是「她什么时候该主动开口」。**现在写进去不生效**，因为主动说话的逻辑还没写。提前放出来是想先把想法固定下来：
+`behavior` 段决定「她什么时候该主动说话」。换歌时 hub 按策略决定要不要叫醒 agent，叫醒之后**说不说由 agent 自己判断**——不想说就当没看见。
 
-| 键 | 打算怎么用 |
-|---|---|
-| `onSongChange` | `always` 每首都接话 / `ask` 拿不准就问 / `silent` 只在被问到时说 |
-| `minGapSeconds` | 两次主动开口之间的最小间隔，防刷屏 |
-| `quietHours` | 这段时间内绝不主动说话 |
-| `ignoreSource` | 这些来源的变化不触发发言 |
+| 键 | 说明 | 默认 |
+|---|---|---|
+| `onSongChange` | `always` 每首都接话 / `ask` 看她心情 / `silent` 从不主动 | `ask` |
+| `minGapSeconds` | 两次主动开口之间的最小间隔，防刷屏 | `180` |
+| `quietHours` | 这段时间内绝不主动说话，支持跨零点 | `["23:30","07:00"]` |
+| `ignoreSource` | 这些来源的变化不触发发言 | `["bilibili"]` |
+| `notify.kind` | `none` 只记录不打扰 / `qq-bridge` 通过 QQ 桥接叫醒 / `webhook` 通用 | `none` |
+| `notify.url` | `qq-bridge` 模式下的地址，如 `http://127.0.0.1:3100` | — |
+| `notify.consoleToken` | 桥接控制台令牌 | — |
+| `notify.key` | 会话标识，如 `private:1234567` | — |
+| `notify.message` | 叫醒时的提示词，支持 `{title}` `{artists}` `{album}` | 见 `config.example.json` |
+
+**为什么只叫醒、不直接把歌名塞进对话**：把歌名塞给它，它就只会复述歌名；只告诉它「有变化了」，它才会自己决定要不要看、要不要开口。真人也不是每首歌都要点评一句。
+
+**一个必须知道的细节**：`qq-bridge` 的 `notify-ai` 触发的是 **silent 回合**——那一轮 agent 的文字输出不会自动发到 QQ，它必须显式调用发送工具（例如 `qq_send_private_message`）才发得出去。这是设计使然（避免打扰），不是 bug。
 
 ### 调试
 
