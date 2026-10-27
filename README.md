@@ -107,9 +107,33 @@ agent 想查歌词、拉热评、找相似歌，都得先有数字 id，而 SMTC
 
 ## 快速开始
 
-需要 Node.js ≥ 22。
+需要 Node.js ≥ 22。**只能在 Windows 上用**（读的是系统媒体会话）。
 
-### 1. 起一个 hub
+### 方式 A：装成 DSH 插件（推荐，一步搞定）
+
+```bash
+dsh plugin --profile <你的 profile> add /absolute/path/to/packages/watcher
+```
+
+装完**重启一次 DSH**——host 插件只在启动时加载，装着不重启是跑不起来的。
+
+插件自己做三件事：
+
+1. 起一个本地 hub（`127.0.0.1:8787`，数据在 `~/.dsh-music-companion/data/`）
+2. 每 20 秒读一次系统媒体会话，上报给 hub
+3. 把四个工具注册进 agent（`music_now_playing` / `music_history` / `music_recommend` / `music_taste`）
+
+重启后直接问她「我在听什么」，不用另起进程、也不用配 MCP。
+
+> **采集只在 DSH 进程活着时进行。** DSH 退出（托盘图标右键「退出」）或电脑睡眠期间不记录。要真正「开机就在听」，给 DSH 开开机自启即可。
+
+**想接自己的服务器？** 在 `config.json` 里把 `hub.url` 指向它——只要不是 `127.0.0.1` / `localhost`，插件就会跳过内置 hub，直接往那边报（跨机器场景见方式 B）。
+
+### 方式 B：手动部署（跨机器 / 调试用）
+
+三件套分开跑，适合 watcher 和 agent 不在同一台机器的情况。
+
+**1. 起 hub**
 
 ```bash
 MUSIC_HUB_TOKEN=$(openssl rand -hex 24) node packages/music-hub/src/hub.mjs
@@ -117,23 +141,9 @@ MUSIC_HUB_TOKEN=$(openssl rand -hex 24) node packages/music-hub/src/hub.mjs
 
 默认监听 `127.0.0.1:8787`。数据落在 `packages/music-hub/data/`，纯 JSON，出问题 `cat` 一下就能明白。
 
-要跨机器用（watcher 和 hub 不在同一台），把 `MUSIC_HUB_HOST` 设成 `0.0.0.0`，并且**务必设一个足够长的 `MUSIC_HUB_TOKEN`**——`/v1/*` 全部接口都要鉴权。
+要跨机器用，把 `MUSIC_HUB_HOST` 设成 `0.0.0.0`，并且**务必设一个足够长的 `MUSIC_HUB_TOKEN`**——`/v1/*` 全部接口都要鉴权。
 
-### 2. 起 watcher（二选一）
-
-**方式 A：作为 DSH 插件（推荐）**
-
-```bash
-dsh plugin --profile <你的 profile> add /absolute/path/to/packages/watcher
-```
-
-装完**重启一次 DSH**——host 插件只在启动时加载，装着不重启是跑不起来的（配置树里会显示 `absent`）。
-
-之后它跟着 DSH 一起启动、一起退出，不用再管任何进程。`packages/watcher/cordis.patch.yml` 会以 `music-watcher` 为 id 插进配置树；也可以手工在 profile 的 `dsh.profile.bundles` 里加 `"@dsh-music/watcher": "link:<绝对路径>"`，效果一样。
-
-> **采集只在 DSH 进程活着时进行。** DSH 退出（托盘图标右键「退出」）或电脑睡眠期间不记录。要真正「开机就在听」，给 DSH 开开机自启即可；或者用方式 B 配一个登录自启的计划任务。
-
-**方式 B：独立进程（调试用，或需要脱离 DSH 常驻时）**
+**2. 起 watcher**
 
 ```bash
 MUSIC_HUB_URL=http://127.0.0.1:8787 \
@@ -143,9 +153,7 @@ node packages/watcher/watcher.mjs
 
 加 `--once` 只读一次就退出，适合确认到底读到了什么；平时调试不重启 DSH 就用这个方式。
 
-**仅支持 Windows**（读的是系统媒体会话）。每 20 秒读一次，每轮都上报（进度在变），但相同的歌只会写一次历史。
-
-### 3. 把 mcp-music 挂进 agent
+**3. 挂 mcp-music**
 
 ```bash
 npm install --prefix packages/mcp-music
@@ -164,6 +172,8 @@ mcp-servers:
 ```
 
 现在问她「我在听什么」，她会去查。
+
+每 20 秒读一次，每轮都上报（进度在变），但相同的歌只会写一次历史。
 
 ---
 

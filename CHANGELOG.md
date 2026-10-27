@@ -1,5 +1,20 @@
 # 更新日志
 
+## v0.4.1 — 2026-10-27
+
+**修一个只有真机调用才会暴露的 bug。**
+
+### 修复
+
+- `tools.output.render` 现在返回 content 数组（`[{ type: 'text', text }]`），而不是裸字符串。DSH 的 `createSuccessResult()` 会拿 render 的返回值当数组用（结果投影时调 `.some()`），返回字符串会报 `content.some is not a function`——工具注册成功、列表里也看得见，但一调用就崩
+- 错误路径改成直接 `throw`，交给框架的 `toolErrorResult()` 处理（之前返回 `{ content, isError }` 对象，既不符合 value schema 也不符合 result 形状）
+
+### 变更
+
+- README「快速开始」重写：把「装成插件」提到最前面并写明它自己起 hub、注册工具，不再需要「起 hub → 起 watcher → 挂 MCP」三步；原来的三步降级成「方式 B：手动部署（跨机器 / 调试用）」
+
+---
+
 ## v0.4.0 — 2026-10-27
 
 **装一个插件就够了。** hub 和四个工具都并进 watcher 包，不再需要单独起服务、也不用配 MCP。
