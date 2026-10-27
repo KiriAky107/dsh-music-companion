@@ -140,7 +140,10 @@ export function createMusicTools({ hubUrl, token }) {
       description:
         '查看主人此刻正在听什么歌。当主人提到音乐、问你在听什么、或你想主动接话聊音乐时用。返回歌名、歌手、播放状态；如果很久没更新会标注可能已关闭。',
       parameters: { type: 'object', properties: {}, additionalProperties: false },
-      output: { schema: { type: 'string' }, render: (_args, value) => value },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: String(value) }],
+      },
       async execute() {
         try {
           return describeNow(await hub.get('/v1/now-playing'));
@@ -149,7 +152,7 @@ export function createMusicTools({ hubUrl, token }) {
           if (String(err?.message || '').includes('404')) {
             return '还没收到任何播放数据。可能是桌面端的 watcher 没在跑。';
           }
-          return fail(err);
+          throw err;
         }
       },
     },
@@ -170,14 +173,17 @@ export function createMusicTools({ hubUrl, token }) {
         },
         additionalProperties: false,
       },
-      output: { schema: { type: 'string' }, render: (_args, value) => value },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: String(value) }],
+      },
       async execute(args = {}) {
         try {
           const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
           const { items } = await hub.get(`/v1/history?limit=${limit}`);
           return describeHistory(items);
         } catch (err) {
-          return fail(err);
+          throw err;
         }
       },
     },
@@ -197,7 +203,10 @@ export function createMusicTools({ hubUrl, token }) {
         required: ['title', 'artist', 'reason'],
         additionalProperties: false,
       },
-      output: { schema: { type: 'string' }, render: (_args, value) => value },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: String(value) }],
+      },
       async execute(args = {}) {
         const title = String(args.title || '').trim();
         const artist = String(args.artist || '').trim();
@@ -219,7 +228,7 @@ export function createMusicTools({ hubUrl, token }) {
             (res?.ok ? '桌面端下次拉取时会看到它。' : '')
           );
         } catch (err) {
-          return fail(err);
+          throw err;
         }
       },
     },
@@ -254,7 +263,10 @@ export function createMusicTools({ hubUrl, token }) {
         },
         additionalProperties: false,
       },
-      output: { schema: { type: 'string' }, render: (_args, value) => value },
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: String(value) }],
+      },
       async execute(args = {}) {
         const hasWrite =
           args.artists !== undefined || args.tags !== undefined || args.notes !== undefined;
@@ -270,7 +282,7 @@ export function createMusicTools({ hubUrl, token }) {
           });
           return '口味已更新：\n' + describeTaste(res?.taste);
         } catch (err) {
-          return fail(err);
+          throw err;
         }
       },
     },
