@@ -1,5 +1,32 @@
 # 更新日志
 
+## v0.4.0 — 2026-10-27
+
+**装一个插件就够了。** hub 和四个工具都并进 watcher 包，不再需要单独起服务、也不用配 MCP。
+
+### 新增
+
+- `packages/watcher/lib/hub.mjs`：hub 的可嵌入版本（`createHub()` 工厂），插件启动时自己起一个本地 hub
+- `packages/watcher/lib/tools.mjs`：四个工具改成由宿主直接注册（`ctx.tools.register`），不再依赖 MCP
+- `packages/watcher/lib/config.mjs`：包内配置加载副本，插件形态下路径按包位置反推
+- `config.json` 新增 `hub.embedded`（默认 `true`，设为 `false` 可强制不起本地 hub）与 `hub.embeddedToken`
+
+### 变更
+
+- `index.js` 现在一次做完四件事：起 hub、读 SMTC、注册四个工具、管生命周期
+- `lib/ticker.mjs` 改用包内 `./config.mjs`，不再跨包引 `packages/shared`
+- `package.json` 升到 `0.4.0`，`files` 补齐 `lib/config.mjs` / `lib/hub.mjs` / `lib/notify.mjs` / `lib/tools.mjs`
+
+### 为什么
+
+以前装完插件只能读媒体会话，还得自己起 hub、自己挂 MCP，对普通用户门槛太高。现在 `hub.url` 留空或指向本机就用内置 hub；指向服务器就自动跳过本地 hub，行为完全不变。
+
+### 已知限制
+
+- 本地 hub 只绑 `127.0.0.1`，别的机器访问不到（要跨机器还是得单独部署 `packages/music-hub`）
+
+---
+
 ## v0.3.0 — 2026-10-27
 
 **跟着 DSH 一起跑。** watcher 从独立脚本变成标准 host 插件，同时补齐口味画像和推荐闭环。

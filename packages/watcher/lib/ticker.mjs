@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { lookupNetease, neteaseStatus } from './netease.mjs';
-import { loadConfig, pick, pickNumber, describeConfig } from '../../shared/config.mjs';
+import { loadConfig, pick, pickNumber, describeConfig } from './config.mjs';
 
 const execFileAsync = promisify(execFile);
 
