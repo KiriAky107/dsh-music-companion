@@ -23,6 +23,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // smtc.ps1 和本文件同目录（既在 packages/watcher/lib/ 下，也在插件包里）
 const PS1 = path.join(HERE, 'smtc.ps1');
 
+// 宿主进程（Electron）的 PATH 未必和终端一致，powershell.exe 可能找不到，
+// 所以优先拼绝对路径，兜底才回退到裸名字。
+const PS_EXE = process.env.SystemRoot
+  ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  : 'powershell.exe';
+
 /**
  * @param {object} [overrides] 插件 config 里的字段，优先级低于环境变量和 config.json
  * @returns {{ start: (log?: Function) => void, stop: () => void, tick: (log?: Function) => Promise<void>, intervalMs: number, describe: () => string }}
@@ -64,7 +70,7 @@ export function createTicker(overrides = {}) {
 
   async function readSmtc() {
     const { stdout } = await execFileAsync(
-      'powershell.exe',
+      PS_EXE,
       ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', PS1],
       { timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024 },
     );

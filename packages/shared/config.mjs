@@ -20,14 +20,23 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const APP_DIR = 'dsh-music-companion';
+
+// 本文件所在目录（packages/shared/）。插件形态下 cwd 是宿主进程的工作目录，
+// 靠 cwd 找不到仓库根的 config.json，所以要用文件自身的位置反推。
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 export function candidatePaths() {
   const list = [];
 
   const explicit = (process.env.MUSIC_CONFIG || '').trim();
   if (explicit) list.push(path.resolve(explicit));
+
+  // 包根目录（packages/shared/../.. == 仓库根）。插件形态下 cwd 不可靠，
+  // 这条才是「把 config.json 放在源码根目录」能生效的关键。
+  list.push(path.join(HERE, '..', '..', 'config.json'));
 
   // 在仓库根目录直接跑时，config.json 就在手边
   list.push(path.resolve(process.cwd(), 'config.json'));
