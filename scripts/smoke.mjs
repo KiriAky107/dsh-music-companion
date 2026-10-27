@@ -8,15 +8,20 @@
  */
 
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { unusedPort } from '../test/helpers.mjs';
+import os from 'node:os';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
-const DATA_DIR = path.join(ROOT, '.smoke-data');
-const PORT = 18787;
+const DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'music-smoke-'));
+const CONFIG = path.join(DATA_DIR, 'config.json');
+fs.writeFileSync(CONFIG, JSON.stringify({ behavior: { onSongChange: 'silent' } }));
+const PORT = await unusedPort();
 const TOKEN = 'smoke-test-token';
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -66,10 +71,8 @@ function cleanup() {
 
 /* ------------------------------------------------------------------ */
 
-cleanup();
-
 const hub = spawn(process.execPath, [path.join(ROOT, 'packages/music-hub/src/hub.mjs')], {
-  env: { ...process.env, MUSIC_HUB_PORT: String(PORT), MUSIC_HUB_TOKEN: TOKEN, MUSIC_HUB_DATA: DATA_DIR },
+  env: { ...process.env, MUSIC_CONFIG: CONFIG, MUSIC_HUB_HOST: '127.0.0.1', MUSIC_HUB_PORT: String(PORT), MUSIC_HUB_TOKEN: TOKEN, MUSIC_HUB_DATA: DATA_DIR },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
@@ -190,8 +193,9 @@ try {
   console.error('\n失败：', err.message);
   if (hubLog) console.error('--- hub 日志 ---\n' + hubLog);
 } finally {
+  const stopped = hub.exitCode === null ? once(hub, 'exit') : Promise.resolve();
   hub.kill();
-  await sleep(300);
+  await stopped;
   cleanup();
   if (failed) process.exit(1);
   process.exit(0);

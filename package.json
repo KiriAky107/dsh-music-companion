@@ -9,6 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "test": "node --test test/*.test.mjs",
     "hub": "node packages/music-hub/src/hub.mjs",
     "watcher": "node packages/watcher/watcher.mjs",
     "mcp": "node packages/mcp-music/src/server.mjs",

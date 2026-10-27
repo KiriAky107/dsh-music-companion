@@ -63,6 +63,9 @@ function describeNow(now) {
   let line = bits.join(' — ');
 
   if (now.track.duration) line += `，时长 ${formatDuration(now.track.duration)}`;
+  if (Number.isFinite(now.listenedSeconds) && now.listenedSeconds >= 0) {
+    line += `，已听约 ${Math.round(now.listenedSeconds)} 秒`;
+  }
 
   if (now.stale) {
     line += `（已经 ${now.ageSeconds} 秒没更新了，可能关掉了播放器）`;

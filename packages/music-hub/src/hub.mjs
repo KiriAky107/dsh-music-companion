@@ -152,7 +152,9 @@ const notifier = createNotifier(CFG.behavior, log);
 /** 上一首歌，用来判断是不是真的换歌了 */
 let lastKey = (() => {
   const prev = readJson(FILES.now, null);
-  return prev?.track ? trackKey(prev.track) : null;
+  if (!prev?.track) return null;
+  const last = readHistory(1)[0];
+  return last?.track ? trackKey(last.track) : prev.playing !== false ? trackKey(prev.track) : null;
 })();
 
 function handleNowPlaying(body) {
@@ -175,28 +177,43 @@ function handleNowPlaying(body) {
   const key = trackKey(track);
   const changed = key !== lastKey;
 
-  // 上一首听了多久：从它开始播到它最后一次被上报。
-  // watcher 每轮都会上报，所以 prev.updatedAt 就是上一首的"最后一刻"。
-  // 有了 duration 就能判断是听完还是跳过 —— 这才是真正的口味信号。
+  // 播放位置不能当听歌时长：暂停、拖进度条和采集空白都不该增加计数。
   const prev = readJson(FILES.now, null);
-  let listenedSeconds = null;
-  if (changed && prev?.track && prev.startedAt) {
-    const startedMs = new Date(prev.startedAt).getTime();
-    const endMs = new Date(prev.updatedAt || now).getTime();
-    if (Number.isFinite(startedMs) && Number.isFinite(endMs)) {
-      listenedSeconds = Math.max(0, Math.round((endMs - startedMs) / 1000));
+  const sameTrack = prev?.track && trackKey(prev.track) === key;
+  const device = body.device ? String(body.device).slice(0, 64) : 'unknown';
+  const source = body.source ? String(body.source).slice(0, 64) : 'unknown';
+  const nonnegative = (value) => Number.isFinite(value) && value >= 0;
+  const previousTotal = nonnegative(prev?.listenedSeconds) ? prev.listenedSeconds : 0;
+  let pending = nonnegative(prev?.pendingListenedSeconds) ? prev.pendingListenedSeconds : null;
+  if (!sameTrack && prev?.track && trackKey(prev.track) === lastKey) pending = previousTotal;
+
+  let total = sameTrack ? previousTotal : key === lastKey ? pending ?? 0 : 0;
+  const reported = nonnegative(body.listenedSeconds) ? body.listenedSeconds : null;
+  const gap = Date.parse(now) - Date.parse(prev?.updatedAt);
+  if (sameTrack && prev.device === device && prev.source === source &&
+      gap >= 0 && gap <= STALE_MS) {
+    if (reported !== null && nonnegative(prev.watcherListenedSeconds)) {
+      // 计数归零表示 watcher 重启或丢失媒体，不能跨这段空白累加。
+      total += Math.min(Math.max(0, reported - prev.watcherListenedSeconds), gap / 1000);
+    } else if (reported === null && prev.playing) {
+      // 兼容旧 watcher：只统计前一轮在播放的有效采样间隔。
+      total += gap / 1000;
     }
   }
 
-  // startedAt 只在换歌时重置；暂停/继续不会改它，所以它是"这首歌的开播时刻"
-  const startedAt = changed || !prev?.startedAt ? now : prev.startedAt;
+  const listenedSeconds = pending === null ? null : Math.round(pending);
+  const startedAt = !sameTrack || !prev?.startedAt ? now : prev.startedAt;
 
   const state = {
     track,
     progress: typeof body.progress === 'number' ? body.progress : null,
     playing,
-    device: body.device ? String(body.device).slice(0, 64) : 'unknown',
-    source: body.source ? String(body.source).slice(0, 64) : 'unknown',
+    device,
+    source,
+    listenedSeconds: total,
+    watcherListenedSeconds: reported,
+    // 暂停时切歌不写历史；把上一首的计数保留到新歌真正开始播放。
+    pendingListenedSeconds: changed && playing ? null : pending,
     startedAt,
     updatedAt: now,
     stale: false,
