@@ -1,0 +1,8 @@
+# 把 music-watcher 插进 DSH 的 host 层。
+#
+# 装上之后，桌面端一启动就会开始读 SMTC 并上报给 music-hub，
+# 不需要手动开终端，也不需要配开机自启的计划任务。
+- insert:
+    - id: music-watcher
+      name: '@dsh-music/watcher'
+      config: {}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Music Watcher",
+    "description": "Reads the Windows system media session and reports what you are listening to, so your agent can join in and remember your taste."
+  }
+}
