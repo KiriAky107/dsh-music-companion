@@ -30,16 +30,16 @@ const PS_EXE = process.env.SystemRoot
   : 'powershell.exe';
 
 /**
- * @param {object} [overrides] 插件 config 里的字段，优先级低于环境变量和 config.json
+ * @param {object} [overrides] hubUrl/token 是插件已解析的连接参数；其余字段作为配置默认值
  * @returns {{ start: (log?: Function) => void, stop: () => void, tick: (log?: Function) => Promise<void>, intervalMs: number, describe: () => string }}
  */
 export function createTicker(overrides = {}) {
   const CFG = loadConfig();
 
   const HUB_URL = String(
-    pick('MUSIC_HUB_URL', CFG.hub?.url ?? overrides.hubUrl, 'http://127.0.0.1:8787'),
+    overrides.hubUrl ?? pick('MUSIC_HUB_URL', CFG.hub?.url, 'http://127.0.0.1:8787'),
   ).replace(/\/+$/, '');
-  const TOKEN = String(pick('MUSIC_HUB_TOKEN', CFG.hub?.token ?? overrides.token, '')).trim();
+  const TOKEN = String(overrides.token ?? pick('MUSIC_HUB_TOKEN', CFG.hub?.token, '')).trim();
   const POLL_SECONDS = pickNumber(
     'MUSIC_POLL_SECONDS',
     CFG.watcher?.pollSeconds ?? overrides.pollSeconds,
@@ -56,13 +56,24 @@ export function createTicker(overrides = {}) {
   );
 
   let timer = null;
+  let inFlight = false;
+  let generation = 0;
 
   // 播放状态：换歌清零，暂停不累加
   let currentSong = null;
   let elapsedSeconds = 0;
-  let lastTickAt = Date.now();
+  let lastTickAt = null;
+  let wasPlaying = false;
   let lastLoggedKey = null;
   let consecutiveErrors = 0;
+
+  function resetPlayback() {
+    currentSong = null;
+    elapsedSeconds = 0;
+    lastTickAt = null;
+    wasPlaying = false;
+    lastLoggedKey = null;
+  }
 
   /* ---------------------------------------------------------------- */
   /* 读 SMTC                                                           */
@@ -127,23 +138,23 @@ export function createTicker(overrides = {}) {
   /* 一轮                                                              */
   /* ---------------------------------------------------------------- */
 
-  async function tick(log = () => {}) {
+  async function sample(log, sampleGeneration) {
     let info;
     try {
       info = await readSmtc();
     } catch (err) {
+      resetPlayback();
       log('读 SMTC 失败：', err.message);
       return;
     }
+    if (sampleGeneration !== generation) return;
 
     // 没有播放器在跑：什么都不发，让 hub 自己按超时标 stale
     if (!info || !info.found || !info.title) {
       if (currentSong !== null) {
         log('播放器已退出或无媒体');
-        currentSong = null;
-        elapsedSeconds = 0;
-        lastLoggedKey = null;
       }
+      resetPlayback();
       return;
     }
 
@@ -160,6 +171,7 @@ export function createTicker(overrides = {}) {
     const source = classifySource(info.app);
     const appId = String(info.app || '').toLowerCase();
     if (IGNORE_SOURCES.has(source) || IGNORE_SOURCES.has(appId)) {
+      resetPlayback();
       return;
     }
 
@@ -172,16 +184,18 @@ export function createTicker(overrides = {}) {
 
     // 进度：SMTC 对网易云不报 timeline，只能自己累加。
     // 暂停期间不计时、换歌清零 —— 这就是"这首歌听了多久"。
-    const songKey = `${info.title}|${info.artist || ''}`;
+    const songKey = `${info.app || ''}|${info.title}|${info.artist || ''}`;
     const now = Date.now();
     if (songKey !== currentSong) {
       currentSong = songKey;
       elapsedSeconds = 0;
-    }
-    if (playing) {
-      elapsedSeconds += Math.max(0, (now - lastTickAt) / 1000);
+    } else if (wasPlaying && lastTickAt !== null) {
+      const gap = now - lastTickAt;
+      // 超过两轮没有有效采样，可能是休眠或采集阻塞，不把空白时间算成听歌。
+      if (gap >= 0 && gap <= POLL_SECONDS * 2000) elapsedSeconds += gap / 1000;
     }
     lastTickAt = now;
+    wasPlaying = playing;
 
     const payload = {
       track: {
@@ -196,6 +210,8 @@ export function createTicker(overrides = {}) {
         typeof info.position === 'number' && info.position > 0
           ? info.position
           : Math.round(elapsedSeconds),
+      // 独立于播放位置：拖进度条不会改变听歌时长。
+      listenedSeconds: elapsedSeconds,
       playing,
       device: DEVICE,
       source,
@@ -218,6 +234,16 @@ export function createTicker(overrides = {}) {
     } catch (err) {
       consecutiveErrors += 1;
       log(`上报失败（第 ${consecutiveErrors} 次）：`, err.message);
+    }
+  }
+
+  async function tick(log = () => {}) {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      await sample(log, generation);
+    } finally {
+      inFlight = false;
     }
   }
 
@@ -245,6 +271,8 @@ export function createTicker(overrides = {}) {
   }
 
   function stop() {
+    generation += 1;
+    resetPlayback();
     if (timer) {
       clearInterval(timer);
       timer = null;
